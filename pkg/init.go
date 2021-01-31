@@ -94,7 +94,7 @@ func init() {
 
 	if userLocale == "" {
 		userLocale = "C"
-		log.Println("no default locale found. Assumin " + userLocale)
+		log.Println("no default locale found. Assume " + userLocale)
 	}
 
 	if WINDOWS == runtime.GOOS {

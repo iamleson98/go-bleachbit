@@ -295,13 +295,13 @@ func itemExist(pathname string) bool {
 	return false
 }
 
-func lExists(path string) bool {
+func lExists(path string) (bool, error) {
 	_, err := os.Lstat(path)
 	if err != nil {
-		return false
+		return false, err
 	}
 
-	return true
+	return true, nil
 }
 
 func getLogin() (string, error) {
@@ -557,4 +557,14 @@ func normalizeEncoding(encoding string) string {
 	}
 
 	return strings.Join(chars, "")
+}
+
+func valueInList(value string, list *[]string) bool {
+	for _, v := range *list {
+		if v == value {
+			return true
+		}
+	}
+
+	return false
 }

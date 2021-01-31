@@ -11,7 +11,7 @@ import (
 
 func makeDirs(path string) {
 	log.Printf("Make dirs(%s)\n", path)
-	if lExists(path) {
+	if ext, _ := lExists(path); ext {
 		return
 	}
 

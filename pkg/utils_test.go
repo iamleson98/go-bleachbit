@@ -32,3 +32,7 @@ func TestReadPasswordFile(t *testing.T) {
 	fmt.Println(mapIntPwd)
 	fmt.Println(mapStringPwd)
 }
+
+func TestGetDefaultLocale(t *testing.T) {
+
+}
