@@ -9,17 +9,6 @@ import (
 	"runtime"
 )
 
-const (
-	// LINUX if os is linux
-	LINUX string = "linux"
-
-	// WINDOWS if os is windows
-	WINDOWS string = "windows"
-
-	// DARWIN
-	DARWIN string = "darwin"
-)
-
 // Cleaner represents a general cleaner.
 // Other cusom-cleaner (system junk, internet, browser, ...) inherit from this base
 type Cleaner struct {

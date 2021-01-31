@@ -2,13 +2,14 @@ package pkg
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 
+	_ "github.com/leminhson2398/bleachbit/log"
+	log "github.com/sirupsen/logrus"
 	ini "gopkg.in/ini.v1"
 )
 
@@ -65,20 +66,26 @@ func initConfiguration() {
 	}
 
 	if _, err := os.Lstat(optionsFile); err != nil {
-		log.Printf("Deleting configuration: %s", optionsFile)
+		log.WithFields(log.Fields{
+			"spot": "options.initConfiguration",
+		}).Infof("Deleting configuration: %s", optionsFile)
+
 		err := os.Remove(optionsFile)
-		log.Println(err.Error())
+
+		log.WithFields(log.Fields{
+			"spot": "options.initConfiguration",
+		}).Warningln(err.Error())
 	}
 
 	fIni, err := os.Create(optionsFile)
 	if err != nil {
-		log.Fatalln(err.Error())
+		log.WithField("spot", "options.initConfiguration").Fatalln(err.Error())
 	}
 	defer fIni.Close()
 
 	_, err = fIni.WriteString("[bleachbit]\n")
 	if err != nil {
-		log.Fatalln(err.Error())
+		log.WithField("spot", "options.initConfiguration").Fatalln(err.Error())
 	}
 	if WINDOWS == runtime.GOOS && portableMode {
 		fIni.WriteString("[Portable]\n")
@@ -120,7 +127,7 @@ func (o *options) flush() {
 	// save all configs to optionsFile
 	err := o.config.SaveTo(optionsFile)
 	if err != nil {
-		log.Fatalln(err.Error())
+		log.WithField("spot", "options.options.flush").Fatalln(err.Error())
 	}
 
 	if mkFile && sudoMode() {
@@ -147,7 +154,7 @@ func (o *options) purge() {
 			if ext, err := lExists(pathName); err == nil {
 				exists = ext
 			} else {
-				log.Println("Error checking whether [ath exists")
+				log.WithField("spot", "options.options.purge()").Infoln("Error checking whether [ath exists")
 			}
 
 			if !exists {
@@ -160,7 +167,7 @@ func (o *options) purge() {
 func (o *options) setDefault(key, value string) {
 	_, err := o.config.Section("bleachbit").NewKey(key, value)
 	if err != nil {
-		log.Fatalln(err.Error())
+		log.WithField("spot", "options.options.setDefault()").Fatalln(err.Error())
 	}
 }
 
@@ -172,7 +179,7 @@ func (o *options) set(key, value, section string, commit bool) {
 	if k, err := sec.GetKey(key); err != nil {
 		_, err := sec.NewKey(key, value)
 		if err != nil {
-			log.Fatalln(err.Error())
+			log.WithField("spot", "options.options.set()").Fatalln(err.Error())
 		}
 	} else {
 		k.SetValue(value)
@@ -191,7 +198,7 @@ func (o *options) commit() {
 func (o *options) restore() {
 	cfg, err := ini.Load(optionsFile)
 	if err != nil {
-		log.Printf("Error reading application's configuration %s\n", err.Error())
+		log.WithField("spot", "options.options.restore()").Errorf("Error reading application's configuration %s\n", err.Error())
 	}
 
 	o.config = cfg
@@ -206,7 +213,7 @@ func (o *options) restore() {
 		guessOvrPaths := guessOverritePaths()
 		err := o.setList("shred_drives", guessOvrPaths)
 		if err != nil {
-			log.Println(err.Error())
+			log.WithField("spot", "options.options.restore()").Errorln(err.Error())
 		}
 	}
 
@@ -236,7 +243,7 @@ func (o *options) restore() {
 		}
 
 		for _, lang_ := range []string{lang, "en"} {
-			log.Printf("Automatically preserving language %s.\n", lang_)
+			log.WithField("spot", "options.options.setDefault()").Infof("Automatically preserving language %s.\n", lang_)
 			o.setLanguage(lang_, true)
 		}
 	}
@@ -250,54 +257,49 @@ func (o *options) restore() {
 	o.set("version", APP_VERSION, "", true)
 }
 
-func (o *options) get(option, section string) bool {
+// get retrieves option from given section
+// returned value will be string and the caler must parse the returned values itself
+func (o *options) get(option, section string) string {
 	if section == "" {
 		section = "bleachbit"
 	}
 
 	if WINDOWS != runtime.GOOS && "update_winapp2" == option {
-		return false
+		return "false"
 	}
 
 	if "hashpath" == section && option[1] == ':' {
 		option = string(option[0]) + option[2:]
 	}
 
-	optionInBoolKeys := valueInList(option, &booleanKeys)
-	optionInIntKeys := valueInList(option, &intKeys)
+	// get section
+	sec := o.config.Section(section)
 
-	if optionInBoolKeys {
+	if valueInList(option, &booleanKeys) {
 		if "bleachbit" == section && "debug" == option && isDebuggingEnabledViaCli() {
-			return true
+			return "true"
 		}
 
-		key, err := o.config.Section(section).GetKey(option)
+		key, err := sec.GetKey(option)
 		if err != nil {
-			log.Fatalln(err.Error())
+			log.WithField("spot", "options.options.get()").Fatalln(err.Error())
 		}
-		b, err := key.Bool()
-		if err != nil {
-			log.Fatalln(err.Error())
-		}
-		return b
-	} else if optionInIntKeys {
-		key, err := o.config.Section(section).GetKey(option)
-		if err != nil {
-			log.Fatalln(err.Error())
-		}
-		intVal, err := key.Int()
-		if err != nil {
-			log.Fatalln(err.Error())
-		}
+		return key.Value()
 
-		if intVal != 0 {
-			return true
-		} else {
-			return false
+	} else if valueInList(option, &intKeys) {
+		key, err := sec.GetKey(option)
+		if err != nil {
+			log.WithField("spot", "options.options.get()").Fatalln(err.Error())
 		}
+		return key.Value()
 	}
 
-	return
+	key, err := sec.GetKey(option)
+	if err != nil {
+		log.WithField("spot", "options.options.get()").Fatalln(err.Error())
+	}
+
+	return key.Value()
 }
 
 func (o *options) setHashPath(pathname, hashValue string) {
@@ -312,15 +314,11 @@ func (o *options) setLanguage(langID string, value bool) {
 	} else {
 		_, err := langSec.NewKey(name, strconv.FormatBool(value))
 		if err != nil {
-			log.Fatalln(err.Error())
+			log.WithField("spot", "options.options.setLanguage()").Fatalln(err.Error())
 		}
 
 		o.flush()
 	}
-}
-
-func (o *options) setDefaultBool(key string, value bool) {
-
 }
 
 func (o *options) setList(key string, values []string) error {
@@ -343,3 +341,51 @@ func (o *options) setList(key string, values []string) error {
 	defer o.flush()
 	return nil
 }
+
+// setWhitelistPaths saves with whitelist
+func (o *options) setWhitelistPaths(values []string) {
+	section := "whitelist/paths"
+	if _, err := o.config.GetSection(section); err == nil {
+		o.config.DeleteSection(section)
+	}
+
+	sec := o.config.Section(section)
+
+	for i, val := range values {
+		_, err := sec.NewKey(strconv.Itoa(i)+"_type", string(val[0]))
+		if err != nil {
+			log.WithField("spot", "options.options.setWhitelistPaths()").Errorln(err.Error())
+		}
+	}
+
+	o.flush()
+}
+
+func (o *options) setTree(parent, child, value string) {
+	var treeSec *ini.Section
+	if _, err := o.config.GetSection("tree"); err != nil {
+		treeSec = o.config.Section("tree")
+	}
+
+	option := parent
+
+	if child != "" {
+		option = option + "." + child
+	}
+	if treeSec.HasKey(option) && value == "" {
+		treeSec.DeleteKey(option)
+	} else {
+		_, err := treeSec.NewKey(option, value)
+		if err != nil {
+			log.WithField("spot", "options.options.setTree()").Errorln(err.Error())
+		}
+	}
+
+	o.flush()
+}
+
+// toggle toggles a boolean key
+// func (o *options) toggle(key string) {
+// 	valAtKey := o.get(key, "")
+// 	o.set(key)
+// }
