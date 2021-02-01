@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -50,6 +51,7 @@ func init() {
 
 func pathToOption(pathname string) string {
 	if WINDOWS == runtime.GOOS && itemExist(pathname) {
+		// FIXME
 		panic("not implemented")
 	}
 
@@ -98,6 +100,34 @@ func initConfiguration() {
 	options_.restore()
 }
 
+// optionsInterface helps check whether a type is properly implemented or not
+type optionsInterface interface {
+	flush()
+	purge()
+	setDefault(key, value string)
+	hasOption(option, section string) bool
+	get(option, section string) interface{}
+	getHashPath(pathanem string) interface{}
+	getLanguage(langID string) bool
+	getLanguages() []string
+	getList(option string) []string
+	getPaths(section string) []string
+	getWhitelistPaths() []string
+	getCustomPaths() []string
+	getTree(parent, child string) bool
+	isCorrupt() bool
+	restore()
+	set(key, value, section string, commit bool)
+	commit()
+	setHashpath(pathname, hashvalue string)
+	setList(key string, values []string)
+	setWhitelistPaths(values []string)
+	setCustomPaths(values []string)
+	setLanguage(langid, value string)
+	setTree(parent, child, value string)
+	toggle(key string)
+}
+
 type options struct {
 	purged bool
 	config *ini.File
@@ -106,7 +136,6 @@ type options struct {
 func newOptions() *options {
 	opts := new(options)
 	opts.purged = false
-	opts.config = new(ini.File)
 
 	defer opts.restore()
 
@@ -135,10 +164,10 @@ func (o *options) flush() {
 	}
 }
 
+// purge clears out obsolete data
 func (o *options) purge() {
 	o.purged = true
 	if hashPathSec, err := o.config.GetSection("hashpath"); err != nil {
-		// return if section named "hashpath" does not exist
 		return
 	} else {
 		alphaNumericRe := regexp.MustCompile("^[a-z]\\\\")
@@ -169,6 +198,193 @@ func (o *options) setDefault(key, value string) {
 	if err != nil {
 		log.WithField("spot", "options.options.setDefault()").Fatalln(err.Error())
 	}
+}
+
+func (o *options) hasOption(option, section string) bool {
+	if section == "" {
+		section = "bleachbit"
+	}
+
+	return o.config.Section(section).HasKey(option)
+}
+
+// get retrieves option from given section
+// returned value will be string and the caler must parse the returned values itself
+func (o *options) get(option, section string) string {
+	if section == "" {
+		section = "bleachbit"
+	}
+
+	if WINDOWS != runtime.GOOS && "update_winapp2" == option {
+		return "false"
+	}
+
+	if "hashpath" == section && option[1] == ':' {
+		option = string(option[0]) + option[2:]
+	}
+
+	// get section
+	sec := o.config.Section(section)
+
+	if valueInList(option, &booleanKeys) {
+		if "bleachbit" == section && "debug" == option && isDebuggingEnabledViaCli() {
+			return "true"
+		}
+
+		key, err := sec.GetKey(option)
+		if err != nil {
+			log.WithField("spot", "options.options.get()").Fatalln(err.Error())
+		}
+		return key.Value()
+
+	} else if valueInList(option, &intKeys) {
+		key, err := sec.GetKey(option)
+		if err != nil {
+			log.WithField("spot", "options.options.get()").Fatalln(err.Error())
+		}
+		return key.Value()
+	}
+
+	key, err := sec.GetKey(option)
+	if err != nil {
+		log.WithField("spot", "options.options.get()").Fatalln(err.Error())
+	}
+
+	return key.Value()
+}
+
+func (o *options) getHashPath(pathanem string) interface{} {
+
+}
+
+// getLanguage retrieves value for whether to preserve the language
+func (o *options) getLanguage(langID string) bool {
+	if !o.config.Section("preserve_languages").HasKey(langID) {
+		return false
+	}
+
+	key, err := o.config.Section("preserve_languages").GetKey(langID)
+	if err != nil {
+		return false
+	}
+
+	return key.MustBool()
+}
+
+func (o *options) getLanguages() []string {
+	if sec, err := o.config.GetSection("preserve_languages"); err != nil {
+		return []string{}
+	} else {
+		keys := sec.Keys()
+		keyNames := make([]string, len(keys))
+		for _, key := range keys {
+			keyNames = append(keyNames, key.Name())
+		}
+		return keyNames
+	}
+}
+
+func (o *options) getList(option string) []string {
+	section := "list/" + option
+	if _, err := o.config.GetSection(section); err != nil {
+		return []string{}
+	}
+
+	keys := o.config.Section(section).Keys()
+	values := make([]string, len(keys))
+
+	// increment sort al the key names
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i].Name() < keys[j].Name()
+	})
+
+	for _, key := range keys {
+		values = append(values, key.Value())
+	}
+
+	return values
+}
+
+func (o *options) getPaths(section string) [][2]string {
+	if sec, err := o.config.GetSection(section); err != nil {
+		return [][2]string{}
+	} else {
+		keys := sec.Keys()
+
+		// incrementing sort keys by their names
+		sort.Slice(keys, func(i, j int) bool {
+			return keys[i].Name() < keys[j].Name()
+		})
+
+		meetMap := make(map[string]bool)
+		values := [][2]string{}
+		for _, key := range keys {
+			pos := strings.Index(key.Name(), "_")
+			if -1 == pos {
+				continue
+			}
+
+			newKeyName := key.Value()[0:pos]
+			if _, ok := meetMap[newKeyName]; !ok {
+				meetMap[newKeyName] = true
+				values = append(values, [2]string{
+					sec.Key(newKeyName + "_type").Value(),
+					sec.Key(newKeyName + "_path").Value(),
+				})
+			}
+		}
+
+		return values
+	}
+}
+
+func (o *options) getWhitelistPaths() [][2]string {
+	return o.getPaths("whitelist/paths")
+}
+
+// getTree Retrieve an option for the tree view.  The child may be emtpty string
+func (o *options) getTree(parent, child string) bool {
+	option := parent
+	if child != "" {
+		option += "." + child
+	}
+
+	if !o.config.Section("tree").HasKey(option) {
+		return false
+	}
+
+	key := o.config.Section("tree").Key(option)
+	boolVal, err := key.Bool()
+	if err != nil {
+		log.WithField("spot", "options.options.getTree()").Errorln("Error in getTree(): " + err.Error())
+		return false
+	}
+	return boolVal
+}
+
+// isCorrupt Perform a self-check for corruption of the configuration
+func (o *options) isCorrupt() bool {
+	for _, key := range booleanKeys {
+		if o.config.Section("bleachbit").HasKey(key) {
+			k := o.config.Section("bleachbit").Key(key)
+			_, err := k.Bool()
+			if err != nil {
+				return true
+			}
+		}
+	}
+
+	for _, intKey := range intKeys {
+		if o.config.Section("bleachbit").HasKey(intKey) {
+			key := o.config.Section("bleachbit").Key(intKey)
+			_, err := key.Int()
+			if err != nil {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func (o *options) set(key, value, section string, commit bool) {
@@ -257,51 +473,7 @@ func (o *options) restore() {
 	o.set("version", APP_VERSION, "", true)
 }
 
-// get retrieves option from given section
-// returned value will be string and the caler must parse the returned values itself
-func (o *options) get(option, section string) string {
-	if section == "" {
-		section = "bleachbit"
-	}
-
-	if WINDOWS != runtime.GOOS && "update_winapp2" == option {
-		return "false"
-	}
-
-	if "hashpath" == section && option[1] == ':' {
-		option = string(option[0]) + option[2:]
-	}
-
-	// get section
-	sec := o.config.Section(section)
-
-	if valueInList(option, &booleanKeys) {
-		if "bleachbit" == section && "debug" == option && isDebuggingEnabledViaCli() {
-			return "true"
-		}
-
-		key, err := sec.GetKey(option)
-		if err != nil {
-			log.WithField("spot", "options.options.get()").Fatalln(err.Error())
-		}
-		return key.Value()
-
-	} else if valueInList(option, &intKeys) {
-		key, err := sec.GetKey(option)
-		if err != nil {
-			log.WithField("spot", "options.options.get()").Fatalln(err.Error())
-		}
-		return key.Value()
-	}
-
-	key, err := sec.GetKey(option)
-	if err != nil {
-		log.WithField("spot", "options.options.get()").Fatalln(err.Error())
-	}
-
-	return key.Value()
-}
-
+// setHashPath Remember the hash of a path
 func (o *options) setHashPath(pathname, hashValue string) {
 	o.set(pathToOption(pathname), hashValue, "hashpath", true)
 }
@@ -321,6 +493,7 @@ func (o *options) setLanguage(langID string, value bool) {
 	}
 }
 
+// setList Set a value which is a list data type
 func (o *options) setList(key string, values []string) error {
 	section := fmt.Sprintf("list/%s", key)
 

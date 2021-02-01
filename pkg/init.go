@@ -29,13 +29,13 @@ const (
 	APP_NAME    = "BleachBit"
 	APP_URL     = "https://www.bleachbit.org"
 	// LINUX if os is linux
-	LINUX string = "linux"
+	LINUX = "linux"
 
 	// WINDOWS if os is windows
-	WINDOWS string = "windows"
+	WINDOWS = "windows"
 
 	// DARWIN
-	DARWIN string = "darwin"
+	DARWIN = "darwin"
 )
 
 func init() {

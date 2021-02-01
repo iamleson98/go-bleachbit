@@ -1,14 +1,15 @@
 package pkg
 
 import (
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/yookoala/realpath"
 )
 
@@ -205,9 +206,46 @@ func (o *openFilesStruct) isOpen(filename string) bool {
 	return false
 }
 
-func bytesToHuman(bytes int) string {
-	if bytes < 0 {
-		return "-" + bytesToHuman(-bytes)
+// func bytesToHuman(bytes int) string {
+// 	if bytes < 0 {
+// 		return "-" + bytesToHuman(-bytes)
+// 	}
+
+// }
+
+func existsInPath(filename string) bool {
+	delimiter := ":"
+	if WINDOWS == runtime.GOOS {
+		delimiter = ";"
 	}
 
+	for _, dirname := range strings.Split(os.Getenv("PATH"), delimiter) {
+		if itemExist(filepath.Join(dirname, filename)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func exeExists(pathname string) bool {
+	if filepath.IsAbs(pathname) {
+		return itemExist(pathname)
+	}
+	return existsInPath(pathname)
+}
+
+func egoOwner(filename string) bool {
+	if info, err := os.Lstat(filename); err != nil {
+		return false
+	} else {
+		sys := info.Sys()
+		if stat, ok := sys.(*syscall.Stat_t); ok {
+			UID := int(stat.Uid)
+			return UID == os.Getuid()
+		} else {
+			log.WithField("spot", "file_utilities.egoOwner()").Errorln("Cannot get owner ID of file")
+			return true
+		}
+	}
 }
