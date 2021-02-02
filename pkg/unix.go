@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	shlex "github.com/anmitsu/go-shlex"
+	"github.com/h2non/filetype"
 	log "github.com/sirupsen/logrus"
 	ini "gopkg.in/ini.v1"
 )
@@ -30,22 +31,32 @@ func isRunning(exename string) bool {
 	panic("unsupported platform for physical_free()")
 }
 
-func runProcess() string {
-	cmd := exec.Command("ps", "aux", "-c")
-	out, err := cmd.Output()
+func isRunningDarwin(exename string) bool {
+	out, err := exec.Command("ps", "aux", "-c").Output()
 	if err != nil {
-		panic(err.Error())
+		log.WithField("spot", "unix.isRunningDarwin()").Fatalln(err.Error())
 	}
 
-	return string(out)
-}
+	strOut := string(out)
+	splitStrOut := strings.Split(strOut, "\n")
+	regExp := regexp.MustCompile(`\s+`)
 
-func isRunningDarwin(exename string) bool {
-	// psResult := runProcess()
-	// splitResult := strings.Split(psResult, "\n")
-	// for
+	processes := []string{}
+	for _, p := range splitStrOut {
+		if p != "" {
+			list := regExp.Split(p, 10)
+			if len(list) >= 11 {
+				processes = append(processes, list[10])
+			} else {
+				log.WithField("spot", "unix.isRunningDarwin()").Errorln("Unexpected output from ps")
+			}
+		}
+	}
 
-	panic("not implemented")
+	// first line is result table header, no need
+	processes = processes[1:]
+
+	return valueInList(exename, &processes)
 }
 
 func isRunningLinux(exename string) bool {
@@ -125,20 +136,6 @@ func (lcp *LocaleCleanerPath) getSubpaths(basepath string) []string {
 	return res
 }
 
-// func (lcp *LocaleCleanerPath) getLocalizations(basepath string) {
-// 	for _, path := range lcp.getSubpaths(basepath) {
-// 		for _, child := range lcp.children {
-// 			if items, err := ioutil.ReadDir(path); err == nil {
-// 				for _, item := range items {
-
-// 				}
-// 			} else {
-// 				log.WithField("spot", "unix.LocaleCleanerPath.getLocalizations()").Fatalln(err.Error())
-// 			}
-// 		}
-// 	}
-// }
-
 func wineToLinuxPath(wineprefix, windowsPathname string) string {
 	driveLetter := string(windowsPathname[0])
 	windowsPathname = strings.ReplaceAll(
@@ -194,6 +191,71 @@ func isBrokenXdgDesktopApplication(config *ini.File, desktopPathname string) boo
 					return true
 				}
 			}
+		}
+
+		return false
+	}
+}
+
+// check if a mimetype is not supported
+func isUnregisteredMime(mime string) bool {
+	if filetype.IsMIMESupported(mime) {
+		return false
+	}
+	return true
+}
+
+// Returns boolean whether the given XDG desktop entry file is broken.
+// Reference: http://standards.freedesktop.org/desktop-entry-spec/latest/
+func isBrokenXdgDesktop(pathname string) bool {
+	iniConfig, err := ini.Load(pathname)
+	if err != nil {
+		log.WithField("spot", "unix.isBrokenXdgDesktop()").Fatalln("Configuration file " + pathname + " does not exist")
+		return true
+	}
+
+	if sec, err := iniConfig.GetSection("Desktop Entry"); err != nil {
+		log.WithField("spot", "unix.isBrokenXdgDesktop()").Infoln("missing required section 'Desktop Entry' " + pathname)
+		return true
+	} else {
+		if !sec.HasKey("Type") {
+			log.WithField("spot", "unix.isBrokenXdgDesktop()").Infoln("missing required option 'Entry' " + pathname)
+			return true
+		}
+
+		fileType := strings.TrimSpace(sec.Key("Type").Value())
+		fileType = strings.ToLower(fileType)
+
+		if "link" == fileType {
+			if !sec.HasKey("URL") && !sec.HasKey("URL[$e]") {
+				log.WithField("spot", "unix.isBrokenXdgDesktop()").Infoln("missing required option 'URL': " + pathname)
+				return true
+			}
+			return false
+		}
+
+		if "mimetype" == fileType {
+			if !sec.HasKey("MimeType") {
+				log.WithField("spot", "unix.isBrokenXdgDesktop()").Infoln("missing required option 'MimeType': " + pathname)
+				return true
+			}
+
+			mimeType := strings.TrimSpace(sec.Key("MimeType").Value())
+			mimeType = strings.ToLower(mimeType)
+			if isUnregisteredMime(mimeType) {
+				log.WithField("spot", "unix.isBrokenXdgDesktop()").Infof("MimeType %s is not supported %s\n", mimeType, pathname)
+				return true
+			}
+			return false
+		}
+
+		if "application" != fileType {
+			log.WithField("spot", "unix.isBrokenXdgDesktop()").Warningf("unhandled type '%s': file '%s'\n", fileType, pathname)
+			return false
+		}
+
+		if isBrokenXdgDesktopApplication(iniConfig, pathname) {
+			return true
 		}
 
 		return false

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -248,4 +249,8 @@ func egoOwner(filename string) bool {
 			return true
 		}
 	}
+}
+
+func globex(pathname string, regex *regexp.Regexp) {
+
 }
