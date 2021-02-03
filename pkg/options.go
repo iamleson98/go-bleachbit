@@ -18,6 +18,18 @@ var (
 	booleanKeys []string
 	intKeys     []string
 	options_    *options
+
+	// runtime type checking
+	_ optionsInterface = newOptions()
+)
+
+type GetType string
+
+const (
+	getString GetType = "string"
+	getBool   GetType = "boolean"
+	getInt    GetType = "integer"
+	getFloat  GetType = "float"
 )
 
 func init() {
@@ -52,7 +64,7 @@ func init() {
 func pathToOption(pathname string) string {
 	if WINDOWS == runtime.GOOS && itemExist(pathname) {
 		// FIXME
-		panic("not implemented")
+		log.WithField("spot", "options.pathToOption()").Fatalln("not implemented")
 	}
 
 	if char := pathname[1]; string(char) == ":" {
@@ -106,24 +118,24 @@ type optionsInterface interface {
 	purge()
 	setDefault(key, value string)
 	hasOption(option, section string) bool
-	get(option, section string) interface{}
-	getHashPath(pathanem string) interface{}
+	get(option, section string, getType GetType) interface{}
+	getHashPath(pathname string) interface{}
 	getLanguage(langID string) bool
 	getLanguages() []string
 	getList(option string) []string
-	getPaths(section string) []string
-	getWhitelistPaths() []string
-	getCustomPaths() []string
+	getPaths(section string) [][2]string
+	getWhitelistPaths() [][2]string
+	getCustomPaths() [][2]string
 	getTree(parent, child string) bool
 	isCorrupt() bool
 	restore()
 	set(key, value, section string, commit bool)
 	commit()
 	setHashpath(pathname, hashvalue string)
-	setList(key string, values []string)
+	setList(key string, values []string) error
 	setWhitelistPaths(values []string)
-	setCustomPaths(values []string)
-	setLanguage(langid, value string)
+	setCustomPaths(values [][2]string)
+	setLanguage(langid string, value bool)
 	setTree(parent, child, value string)
 	toggle(key string)
 }
@@ -210,51 +222,56 @@ func (o *options) hasOption(option, section string) bool {
 
 // get retrieves option from given section
 // returned value will be string and the caler must parse the returned values itself
-func (o *options) get(option, section string) string {
+func (o *options) get(option, section string, getType GetType) interface{} {
 	if section == "" {
 		section = "bleachbit"
 	}
 
 	if WINDOWS != runtime.GOOS && "update_winapp2" == option {
-		return "false"
+		return false
 	}
 
-	if "hashpath" == section && option[1] == ':' {
+	if "hashpath" == section && string(option[1]) == ":" {
 		option = string(option[0]) + option[2:]
 	}
 
 	// get section
-	sec := o.config.Section(section)
-
-	if valueInList(option, &booleanKeys) {
-		if "bleachbit" == section && "debug" == option && isDebuggingEnabledViaCli() {
-			return "true"
-		}
-
-		key, err := sec.GetKey(option)
-		if err != nil {
-			log.WithField("spot", "options.options.get()").Fatalln(err.Error())
-		}
-		return key.Value()
-
-	} else if valueInList(option, &intKeys) {
-		key, err := sec.GetKey(option)
-		if err != nil {
-			log.WithField("spot", "options.options.get()").Fatalln(err.Error())
-		}
-		return key.Value()
-	}
-
-	key, err := sec.GetKey(option)
+	key, err := o.config.Section(section).GetKey(option)
 	if err != nil {
 		log.WithField("spot", "options.options.get()").Fatalln(err.Error())
 	}
 
-	return key.Value()
+	if valueInList(option, &booleanKeys) {
+		if "bleachbit" == section && "debug" == option && isDebuggingEnabledViaCli() {
+			return true
+		}
+		return parseOption(key, getType)
+
+	} else if valueInList(option, &intKeys) {
+		return parseOption(key, getType)
+	}
+	return parseOption(key, getType)
 }
 
-func (o *options) getHashPath(pathanem string) interface{} {
+func parseOption(key *ini.Key, getType GetType) interface{} {
+	var res interface{}
 
+	switch getType {
+	case getBool:
+		res = key.MustBool()
+	case getFloat:
+		res = key.MustFloat64()
+	case getInt:
+		res = key.MustInt()
+	case getString:
+		res = key.String()
+	}
+
+	return res
+}
+
+func (o *options) getHashPath(pathname string) interface{} {
+	return o.get(pathToOption(pathname), "bleachbit", getString)
 }
 
 // getLanguage retrieves value for whether to preserve the language
@@ -465,7 +482,7 @@ func (o *options) restore() {
 	}
 
 	// BleachBit upgrade or first start ever
-	if !o.config.Section("bleachbit").HasKey("version") || o.get("version", "bleachbit") != APP_VERSION {
+	if !o.config.Section("bleachbit").HasKey("version") || o.get("version", "bleachbit", getString) != APP_VERSION {
 		o.set("first_start", "true", "", true)
 	}
 
@@ -558,7 +575,39 @@ func (o *options) setTree(parent, child, value string) {
 }
 
 // toggle toggles a boolean key
-// func (o *options) toggle(key string) {
-// 	valAtKey := o.get(key, "")
-// 	o.set(key)
-// }
+func (o *options) toggle(key string) {
+	valAtKey := o.get(key, "bleachbit", getBool)
+	value := "false"
+	if valAtKey == true {
+		value = "true"
+	}
+	o.set(key, value, "bleachbit", true)
+}
+
+func (o *options) getCustomPaths() [][2]string {
+	return o.getPaths("custom/paths")
+}
+
+// setCustomPaths saves the customlist
+func (o *options) setCustomPaths(values [][2]string) {
+	section := "custom/paths"
+	if sec, err := o.config.GetSection(section); err != nil {
+		o.config.DeleteSection(section)
+	} else {
+		for i, v := range values {
+			_, err := sec.NewKey(strconv.Itoa(i)+"_type", v[0])
+			if err != nil {
+				log.WithField("spot", "options.options.setCustomPaths()").Fatalln(err.Error())
+			}
+			_, err = sec.NewKey(strconv.Itoa(i)+"_path", v[1])
+			if err != nil {
+				log.WithField("spot", "options.options.setCustomPaths()").Fatalln(err.Error())
+			}
+		}
+		o.flush()
+	}
+}
+
+func (o *options) setHashpath(pathname, hashvalue string) {
+	o.set(pathToOption(pathname), hashvalue, "bleachbit", true)
+}

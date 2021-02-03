@@ -1,6 +1,8 @@
 package pkg
 
 import (
+	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +18,9 @@ import (
 
 var (
 	whiteList whiteListed
+
+	// runtime type checking
+	_ openFilesInterface = newOpenFilesStruct()
 )
 
 // childrenInDirectory iterates through dir and make full path of all the items inside dir
@@ -169,6 +174,12 @@ type openFilesStruct struct {
 	files        []string
 }
 
+type openFilesInterface interface {
+	fileQualifies(filename string) bool
+	scan()
+	isOpen(filename string) bool
+}
+
 func newOpenFilesStruct() *openFilesStruct {
 	return new(openFilesStruct)
 }
@@ -207,12 +218,48 @@ func (o *openFilesStruct) isOpen(filename string) bool {
 	return false
 }
 
-// func bytesToHuman(bytes int) string {
-// 	if bytes < 0 {
-// 		return "-" + bytesToHuman(-bytes)
-// 	}
+// Display a file size in human terms (megabytes, etc.) using preferred standard (SI or IEC)
+func bytesToHuman(bytes int) string {
+	if bytes < 0 {
+		return "-" + bytesToHuman(-bytes)
+	}
 
-// }
+	if bytes == 0 {
+		return "0"
+	}
+
+	var prefixes []string
+	var base float64
+	var decimals string
+
+	if options_.get("units_iec", "", getBool) == true {
+		prefixes = []string{"", "Ki", "Mi", "Gi", "Ti", "Pi"}
+		base = 1024
+	} else {
+		prefixes = []string{"", "k", "M", "G", "T", "P"}
+		base = 1000
+	}
+
+	if float64(bytes) >= math.Pow(base, 3) {
+		decimals = "%.2f"
+	} else if float64(bytes) > base {
+		decimals = "%.1f"
+	} else {
+		decimals = "%.f"
+	}
+
+	for _, p := range prefixes {
+		if float64(bytes) < base {
+			abbrev := fmt.Sprintf(decimals, float64(bytes))
+			suf := p
+			return abbrev + suf + "B"
+		} else {
+			bytes = int(float64(bytes) / base)
+		}
+	}
+
+	return "A lot"
+}
 
 func existsInPath(filename string) bool {
 	delimiter := ":"
@@ -249,6 +296,44 @@ func egoOwner(filename string) bool {
 			return true
 		}
 	}
+}
+
+func expandGlobJoin(pathname1, pathname2 string) []string {
+	pathname3 := ExpandUser(os.ExpandEnv(filepath.Join(pathname1, pathname2)))
+	if matches, err := filepath.Glob(pathname3); err != nil {
+		log.WithField("spot", "file_utilities.expandGlobJoin()").Fatalln("Error finding glob")
+		return []string{}
+	} else {
+		return matches
+	}
+}
+
+// If applicable, return the extended Windows pathname
+func extendedPath(path string) string {
+	if WINDOWS == runtime.GOOS {
+		if strings.HasPrefix(path, "\\?") {
+			return path
+		}
+		if strings.HasPrefix(path, "\\") {
+			return "\\\\?\\unc\\" + path[2:]
+		}
+		return "\\\\?\\" + path
+	}
+
+	return path
+}
+
+func extendedPathUndo(path string) string {
+	if WINDOWS == runtime.GOOS {
+		if strings.HasPrefix(path, `\\?\unc`) {
+			return "\\" + path[7:]
+		}
+		if strings.HasPrefix(path, `\\?`) {
+			return path[4:]
+		}
+	}
+
+	return path
 }
 
 func globex(pathname string, regex *regexp.Regexp) {

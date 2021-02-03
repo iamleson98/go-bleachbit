@@ -2,8 +2,10 @@ package pkg
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -23,9 +25,22 @@ func getChromeHistory(path string, fn string) int {
 	return ver
 }
 
-func shredSliteCharColumns(table string, cols int, where string) {
+// Create an SQL command to shred character columns
+func shredSqliteCharColumns(table string, cols []string, where string) string {
 	cmd := ""
-	if cols > 0 && 
+	if len(cols) > 0 && options_.get("shred", "", getBool) == true {
+		stringList1 := []string{}
+		stringList2 := []string{}
+		for _, col := range cols {
+			stringList1 = append(stringList1, fmt.Sprintf("%s = randomblob(length(%s))", col, col))
+			stringList2 = append(stringList2, fmt.Sprintf("%s = zeroblob(length(%s))", col, col))
+		}
+		cmd += fmt.Sprintf("update or ignore %s set %s %s;", table, strings.Join(stringList1, ","), where)
+		cmd += fmt.Sprintf("update or ignore %s set %s %s;", table, strings.Join(stringList2, ","), where)
+	}
+
+	cmd += fmt.Sprintf("delete from %s %s;", table, where)
+	return cmd
 }
 
 type sqlDt int
