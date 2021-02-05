@@ -261,3 +261,40 @@ func isBrokenXdgDesktop(pathname string) bool {
 		return false
 	}
 }
+
+// func runCleanerCmd(cmd string, args []string, freedSpaceRegex string, errorLineRegexes []string) {
+
+// 	if freedSpaceRegex == "" {
+// 		freedSpaceRegex = `[\d.]+[kMGTE]?B?`
+// 	}
+// 	if !exeExists(cmd) {
+// 		log.WithField("spot", "unix.runCleanerCmd").Fatalln("Executable not found: " + cmd)
+// 	}
+
+// 	freedSpaceRegex_ := regexp.MustCompile(freedSpaceRegex)
+// 	errorLineRegexes_ := []*regexp.Regexp{}
+// 	for _, strErrRegex := range errorLineRegexes {
+// 		errorLineRegexes_ = append(errorLineRegexes_, regexp.MustCompile(strErrRegex))
+// 	}
+
+// 	command := exec.Command(cmd, args...)
+// 	// NOTE: not sure. refer to https://docs.python.org/3/library/subprocess.html#subprocess.run
+// 	// whether to assign new or append to existing environment
+// 	command.Env = []string{"LC_ALL=C", fmt.Sprintf("PATH=%s", os.Getenv("PATH"))}
+
+// 	output, err := command.Output()
+// 	if err != nil {
+// 		log.WithField("spot", "unix.runCleanerCmd()").Fatalln(err.Error())
+// 	}
+// 	strOutput := string(output)
+// 	splitOutput := strings.Split(strOutput, "\n")
+
+// 	freedSpace := 0
+// 	for _, line := range splitOutput {
+// 		freedSpaceRegex_
+// 	}
+// }
+
+func aptAutoClean() {
+
+}

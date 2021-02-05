@@ -2,10 +2,11 @@ package pkg
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
-type ActionProvider interface {
+type actionProviderInterface interface {
 	getDeepScan()
 	getCommands()
 }
@@ -16,9 +17,14 @@ type actionProvider struct {
 
 func newActionProvider(actionNode string, pathVars string) *actionProvider {
 	ap := new(actionProvider)
-	ap.plugins = append(ap)
+	ap.plugins = append(ap.plugins, ap)
 
 	return ap
+}
+
+func hasGlob(s string) bool {
+	reg := regexp.MustCompile(`[?*\[\]]`)
+	return reg.MatchString(s)
 }
 
 func (ac *actionProvider) getDeepScan() {
@@ -66,7 +72,7 @@ func (fap *fileActionProvider) setPath(rawPath string, pathVars []string) {
 }
 
 func expandMultiVar(s string, variables map[string]string) []string {
-	if len(variables) == 0 || strings.Index(s, "$$") < 0 {
+	if len(variables) == 0 || strings.Index(s, "$$") == -1 {
 		return []string{s}
 	}
 

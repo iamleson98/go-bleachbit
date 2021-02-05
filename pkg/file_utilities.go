@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -338,4 +339,47 @@ func extendedPathUndo(path string) string {
 
 func globex(pathname string, regex *regexp.Regexp) {
 
+}
+
+func humanToBytes(human string, hformat string) int {
+
+	var base float64
+	var suffixes string
+
+	if hformat == "" {
+		hformat = "si"
+	}
+
+	if hformat == "si" {
+		base = 1000
+		suffixes = "kMGTE"
+	} else if hformat == "du" {
+		base = 1024
+		suffixes = "KMGTE"
+	} else {
+		log.WithField("spot", "file_utilities.humanToBytes()").Fatalln("Invalid format: " + hformat)
+	}
+
+	reg := regexp.MustCompile(fmt.Sprintf(`^(\d+(?:\.\d+)?) ?([%s]?)B?$`, suffixes))
+	matches := reg.FindStringSubmatch(human)
+	// matches should has length of 3 if matches
+	// E.g human = 10GB => matches == []string{"10GB", "10", "G"}
+	if matches == nil {
+		log.WithField("spot", "file_utilities.humanToBytes()").Fatalf("Invalid input for '%s' (hformat='%s')", human, hformat)
+	}
+
+	amount, suffix := matches[1], matches[2]
+	var exponent int
+	if "" == suffix {
+		exponent = 0
+	} else {
+		exponent = strings.Index(suffixes, suffix) + 1
+	}
+
+	float64Amount, err := strconv.ParseFloat(amount, 64)
+	if err != nil {
+		log.WithField("spot", "file_utilities.humanToBytes()").Fatalln(err.Error())
+	}
+
+	return int(math.Pow(base, float64(exponent)) * float64Amount)
 }
