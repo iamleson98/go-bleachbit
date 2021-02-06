@@ -383,3 +383,60 @@ func humanToBytes(human string, hformat string) int {
 
 	return int(math.Pow(base, float64(exponent)) * float64Amount)
 }
+
+func getSize(path string) int {
+	if LINUX == runtime.GOOS {
+		info, err := os.Lstat(path)
+		if err != nil {
+			return 0
+			// NOTE: not like original
+			log.WithField("spot", "file_utilities.getSize()").Errorln(err.Error())
+		}
+		return int(info.Size())
+	}
+
+	if WINDOWS == runtime.GOOS {
+		// FIXME
+		panic("not implemented")
+	}
+
+	// NOTE: note sure yet
+	info, err := os.Stat(path)
+	if err != nil {
+		log.WithField("spot", "file_utilities.getSize()").Fatalln(err.Error())
+	}
+
+	return int(info.Size())
+}
+
+// Delete path that is either file, directory, link or FIFO.
+
+// If shred is enabled as a function parameter or the BleachBit global
+// parameter, the path will be shredded unless allow_shred = False.
+func delete(path string, shred, ignoreMissing, allowShred *bool) {
+	var shred_, ignoreMissing_, allowShred_ bool
+	if shred == nil {
+		shred_ = false
+	}
+	if ignoreMissing == nil {
+		ignoreMissing_ = false
+	}
+	if allowShred == nil {
+		allowShred_ = true
+	}
+
+	isSpecial := false
+	path = extendedPath(path)
+	doShred := allowShred_ && (shred_ || options_.get("shred", "bleachbit", getBool) == true)
+	exist, err := lExists(path)
+	if err != nil || err == nil && exist == false {
+		if ignoreMissing_ {
+			return
+		}
+		log.WithField("spot", "file_utilities.delete()").Fatalln("No such file or directory " + path)
+	}
+
+	if LINUX == runtime.GOOS {
+
+	}
+}

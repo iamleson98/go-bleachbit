@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -262,39 +263,78 @@ func isBrokenXdgDesktop(pathname string) bool {
 	}
 }
 
-// func runCleanerCmd(cmd string, args []string, freedSpaceRegex string, errorLineRegexes []string) {
+func runCleanerCmd(cmd string, args []string, freedSpace string, errLines []string) int {
 
-// 	if freedSpaceRegex == "" {
-// 		freedSpaceRegex = `[\d.]+[kMGTE]?B?`
-// 	}
-// 	if !exeExists(cmd) {
-// 		log.WithField("spot", "unix.runCleanerCmd").Fatalln("Executable not found: " + cmd)
-// 	}
+	if freedSpace == "" {
+		freedSpace = `[\d.]+[kMGTE]?B?`
+	}
+	if !exeExists(cmd) {
+		log.WithField("spot", "unix.runCleanerCmd").Fatalln("Executable not found: " + cmd)
+	}
 
-// 	freedSpaceRegex_ := regexp.MustCompile(freedSpaceRegex)
-// 	errorLineRegexes_ := []*regexp.Regexp{}
-// 	for _, strErrRegex := range errorLineRegexes {
-// 		errorLineRegexes_ = append(errorLineRegexes_, regexp.MustCompile(strErrRegex))
-// 	}
+	freedSpaceReges := regexp.MustCompile(freedSpace)
+	errorLineRegexes := []*regexp.Regexp{}
+	for _, errLine := range errLines {
+		errorLineRegexes = append(errorLineRegexes, regexp.MustCompile(errLine))
+	}
 
-// 	command := exec.Command(cmd, args...)
-// 	// NOTE: not sure. refer to https://docs.python.org/3/library/subprocess.html#subprocess.run
-// 	// whether to assign new or append to existing environment
-// 	command.Env = []string{"LC_ALL=C", fmt.Sprintf("PATH=%s", os.Getenv("PATH"))}
+	command := exec.Command(cmd, args...)
+	// NOTE: not sure. refer to https://docs.python.org/3/library/subprocess.html#subprocess.run
+	// whether to assign new or append to existing environment
+	command.Env = []string{"LC_ALL=C", fmt.Sprintf("PATH=%s", os.Getenv("PATH"))}
 
-// 	output, err := command.Output()
-// 	if err != nil {
-// 		log.WithField("spot", "unix.runCleanerCmd()").Fatalln(err.Error())
-// 	}
-// 	strOutput := string(output)
-// 	splitOutput := strings.Split(strOutput, "\n")
+	output, err := command.Output()
+	if err != nil {
+		log.WithField("spot", "unix.runCleanerCmd()").Fatalln(err.Error())
+	}
+	strOutput := string(output)
 
-// 	freedSpace := 0
-// 	for _, line := range splitOutput {
-// 		freedSpaceRegex_
-// 	}
-// }
+	freeSpace := 0
+	for _, line := range strings.Split(strOutput, "\n") {
+		matches := freedSpaceReges.FindStringSubmatch(line)
+		if matches != nil {
+			// NOTE: note sure yet
+			freeSpace += humanToBytes(matches[0], "")
+		}
+		for _, errRe := range errorLineRegexes {
+			if errRe.MatchString(line) {
+				log.WithField("spot", "unix.runCleanerCmd()").Fatalf("Invalid output from %s: %s\n", cmd, line)
+			}
+		}
+	}
 
-func aptAutoClean() {
+	return freeSpace
+}
 
+func getAptSize() {
+
+}
+
+func getGlobsSize(paths ...string) {
+	totalSize := 0
+	for _, path := range paths {
+		matches, err := filepath.Glob(path)
+		if err != nil {
+			log.WithField("spot", "unix.getBlobsSize()").Fatalln(err.Error())
+		}
+		for _, match := range matches {
+			totalSize += 
+		}
+	}
+}
+
+func aptAutoRemove() int {
+	args := []string{"--yes", "autoremove"}
+	freedSpaceRegex := `.*, ([\d.]+ ?[a-zA-Z]{2}) disk space will be freed.`
+	res := runCleanerCmd("apt-get", args, freedSpaceRegex, []string{"^E: "})
+	return res
+}
+
+func aptAutoClean() int {
+	res := runCleanerCmd("apt-get", []string{"autoclean"}, `^Del .*\[([\d.]+[a-zA-Z]{2})}]`, []string{"^E: "})
+	return res
+}
+
+func aptClean() {
+	oldSize := 
 }
