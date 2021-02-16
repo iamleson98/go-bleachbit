@@ -8,13 +8,17 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	ENCODING "github.com/leminhson2398/bleachbit/encoding"
+	log "github.com/sirupsen/logrus"
+	"github.com/yookoala/realpath"
 )
 
 var (
@@ -63,8 +67,8 @@ func init() {
 
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-")
 
-func randStringRunes(n int) string {
-	b := make([]rune, n)
+func randStringRunes(length int) string {
+	b := make([]rune, length)
 	for i := range b {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
 	}
@@ -564,6 +568,56 @@ func valueInList(value string, list *[]string) bool {
 		if v == value {
 			return true
 		}
+	}
+
+	return false
+}
+
+// statIsLink check whether file is symlink or not
+// refer to: https://stackoverflow.com/questions/52654988/using-os-lstat-return-value-in-go
+func statIsLink(fd os.FileInfo) bool {
+	return fd.Mode()&os.ModeSymlink != 0
+}
+
+// statIsFifo check whether file is fifo pipe or not
+// refer to: https://stackoverflow.com/questions/52654988/using-os-lstat-return-value-in-go
+func statIsFifo(fd os.FileInfo) bool {
+	return fd.Mode()&os.ModeNamedPipe != 0
+}
+
+// isMountPoint checks if given path is a mount point
+func isMountPoint(path string) bool {
+	s1, err := os.Lstat(path)
+	if err != nil {
+		return false
+	}
+
+	if statIsLink(s1) {
+		return false
+	}
+
+	parent := filepath.Join(path, "..")
+	parent, err = realpath.Realpath(parent)
+	if err != nil {
+		log.WithField("spot", "utils.isPathMount()").Fatalln(err.Error())
+	}
+	s2, err := os.Lstat(parent)
+	if err != nil {
+		return false
+	}
+
+	// refer to https://stackoverflow.com/questions/65947259/how-to-check-if-2-directories-are-on-the-same-partition
+	dev2 := s2.Sys().(*syscall.Stat_t).Dev
+	dev1 := s1.Sys().(*syscall.Stat_t).Dev
+
+	if dev1 != dev2 {
+		return true
+	}
+
+	ino1 := s1.Sys().(*syscall.Stat_t).Ino
+	ino2 := s2.Sys().(*syscall.Stat_t).Ino
+	if ino1 == ino2 {
+		return true
 	}
 
 	return false

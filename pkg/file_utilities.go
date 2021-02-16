@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"fmt"
+	"io/ioutil"
 	"math"
 	"os"
 	"os/exec"
@@ -26,14 +27,18 @@ var (
 
 // childrenInDirectory iterates through dir and make full path of all the items inside dir
 // it should be called as a goroutine (mimic python's generator)
-func childrenInDirectory(dir string, pathChan chan string) {
+func childrenInDirectory(dir string, listDirs bool, pathChan chan string) chan string {
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
 		fullPath := filepath.Join(dir, path)
-		pathChan <- fullPath
+		if listDirs {
+			pathChan <- fullPath
+		} else if !listDirs && info.Mode().IsRegular() {
+			pathChan <- fullPath
+		}
 
 		return nil
 	})
@@ -42,6 +47,8 @@ func childrenInDirectory(dir string, pathChan chan string) {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
+
+	return pathChan
 }
 
 func openFileLinux() []string {
@@ -113,13 +120,9 @@ func guessOverritePaths() []string {
 		ret = append(ret, home)
 
 	} else if WINDOWS == runtime.GOOS {
-		// localTmp := os.ExpandEnv("$TMP")
-		// if !itemExist(localTmp) {
-		// 	log.Println("%TMP% does not exist")
-		// }
 		panic("not implemented for windows")
 	} else {
-		log.Fatalln("Unsupported os in guessOverritePaths")
+		log.WithField("spot", "file_utilities.guessOverritePaths()").Fatalln("Unsupported os in guessOverritePaths")
 	}
 
 	return ret
@@ -341,19 +344,26 @@ func globex(pathname string, regex *regexp.Regexp) {
 
 }
 
-func humanToBytes(human string, hformat string) int {
+type measureFormat string
+
+const (
+	siFormat measureFormat = "si"
+	duFormat measureFormat = "du"
+)
+
+// humanToBytes convert human-readable size to number of bytes
+//
+// Example:
+// 2MB -> 2097152
+func humanToBytes(human string, hformat measureFormat) int {
 
 	var base float64
 	var suffixes string
 
-	if hformat == "" {
-		hformat = "si"
-	}
-
-	if hformat == "si" {
+	if hformat == siFormat {
 		base = 1000
 		suffixes = "kMGTE"
-	} else if hformat == "du" {
+	} else if hformat == duFormat {
 		base = 1024
 		suffixes = "KMGTE"
 	} else {
@@ -384,15 +394,16 @@ func humanToBytes(human string, hformat string) int {
 	return int(math.Pow(base, float64(exponent)) * float64Amount)
 }
 
-func getSize(path string) int {
+func getSize(path string) int64 {
 	if LINUX == runtime.GOOS {
 		info, err := os.Lstat(path)
 		if err != nil {
-			return 0
-			// NOTE: not like original
-			log.WithField("spot", "file_utilities.getSize()").Errorln(err.Error())
+			if err == syscall.EACCES { // 13 Permission denied
+				return 0
+			}
+			log.WithField("spot", "file_utilities.getSize()").Fatalln(err.Error())
 		}
-		return int(info.Size())
+		return info.Sys().(*syscall.Stat_t).Blocks * 512
 	}
 
 	if WINDOWS == runtime.GOOS {
@@ -406,11 +417,96 @@ func getSize(path string) int {
 		log.WithField("spot", "file_utilities.getSize()").Fatalln(err.Error())
 	}
 
-	return int(info.Size())
+	return info.Size()
+}
+
+// func getSizeDir(path string, list_directories bool) int64 {
+// 	var totalBytes int64
+// 	files, err := ioutil.ReadDir(path)
+// 	if err != nil {
+// 		log.WithField("spot", "file_utilities.getSizeDir()").Fatalln(err.Error())
+// 	}
+
+// 	for _, info := range files {
+
+// 	}
+// }
+
+// isDirEmpty check if this directory is empty or not
+func isDirEmpty(dirname string) bool {
+	files, err := ioutil.ReadDir(dirname)
+	if err != nil {
+		log.WithField("spot", "file_utilities.isDirEmpty()").Fatalln(err.Error())
+	}
+
+	if len(files) == 0 {
+		return true
+	}
+	return false
+}
+
+// Wipe the original filename and return the new pathname
+func wipeName(pathname string) string {
+	dir, _ := filepath.Split(pathname)
+	var pathname2, pathname3 string
+	// reference http://en.wikipedia.org/wiki/Comparison_of_file_systems#Limits
+	maxLen := 226
+	// first, rename to a long name
+	i := 0
+	for {
+		pathname2 = filepath.Join(dir, randStringRunes(maxLen))
+		err := os.Rename(pathname, pathname2)
+		if err != nil {
+			if maxLen > 10 {
+				maxLen -= 10
+			}
+			i++
+			if i > 100 {
+				log.WithField("spot", "file_utilities.wipeName()").Infof("exhausted long rename: %s\n", pathname)
+				pathname2 = pathname
+				break
+			}
+		} else {
+			break
+		}
+	}
+
+	// finally, rename to a short name
+	i = 0
+	for {
+		pathname3 = filepath.Join(dir, randStringRunes(i+1))
+		err := os.Rename(pathname2, pathname3)
+		if err != nil {
+			i++
+			if i > 100 {
+				log.WithField("spot", "file_utilities.wipeName()").Infof("exhausted short rename: %s\n", pathname)
+				pathname3 = pathname2
+				break
+			}
+		} else {
+			break
+		}
+	}
+
+	return pathname3
+}
+
+func wipeWrite(path string) {
+	// size := getSize(path)
+	// file, err := os.OpenFile(path, os.O_RDWR|os.O_TRUNC, 0)
+	// if err != nil {
+	// 	if err == syscall.EACCES {
+	// 		os.Chmod(path, )
+	// 	}
+	// }
+}
+
+// Wipe files contents
+func wipeContents(path string, truncate *bool) {
+
 }
 
 // Delete path that is either file, directory, link or FIFO.
-
 // If shred is enabled as a function parameter or the BleachBit global
 // parameter, the path will be shredded unless allow_shred = False.
 func delete(path string, shred, ignoreMissing, allowShred *bool) {
@@ -429,14 +525,61 @@ func delete(path string, shred, ignoreMissing, allowShred *bool) {
 	path = extendedPath(path)
 	doShred := allowShred_ && (shred_ || options_.get("shred", "bleachbit", getBool) == true)
 	exist, err := lExists(path)
-	if err != nil || err == nil && exist == false {
+	if err != nil || (err == nil && !exist) {
 		if ignoreMissing_ {
 			return
 		}
 		log.WithField("spot", "file_utilities.delete()").Fatalln("No such file or directory " + path)
 	}
 
-	if LINUX == runtime.GOOS {
+	lstat, err := os.Lstat(path)
+	if err != nil {
+		log.WithField("spot", "file_utilities.delete()").Fatalln(err.Error())
+	}
 
+	if LINUX == runtime.GOOS {
+		isSpecial = statIsFifo(lstat) || statIsFifo(lstat)
+	}
+
+	if isSpecial {
+		err = os.Remove(path)
+		if err != nil {
+			log.WithField("spot", "file_utilities.delete()").Fatalln(err.Error())
+		}
+	} else if lstat.IsDir() {
+		delpath := path
+		if doShred {
+			if !isDirEmpty(path) {
+				log.WithField("spot", "file_utilities.delete()").Infof("Directory is not empty: %s\n", path)
+				return
+			}
+			delpath = wipeName(path)
+		}
+
+		err = os.Remove(delpath)
+		if err != nil {
+			if err == syscall.ENOTEMPTY {
+				log.WithField("spot", "file_utilities.delete()").Infof("Directory is not empty: %s\n", path)
+			} else if err == syscall.EBUSY {
+				if LINUX == runtime.GOOS && isMountPoint(path) {
+					log.WithField("spot", "file_utilities.delete()").Infof("Skipping mount point: %s\n", path)
+				} else {
+					log.WithField("spot", "file_utilities.delete()").Infof("Device or resource is busy\n", path)
+				}
+			} else {
+				log.WithField("spot", "file_utilities.delete()").Fatalln(err.Error())
+			}
+		}
+	} else if statIsLink(lstat) {
+		err := os.Remove(path)
+		if err != nil {
+			log.WithField("spot", "file_utilities.delete()").Fatalln(err.Error())
+		}
+	} else if lstat.Mode().IsRegular() { // is a file
+		if doShred {
+
+		}
+	} else {
+		log.WithField("spot", "file_utilities.delete()").Infof("Special file type cannot be deleted: %s\n", path)
 	}
 }

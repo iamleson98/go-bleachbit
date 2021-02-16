@@ -61,14 +61,13 @@ func (sc *system) getCommands(optionID string) {
 		dirName := ExpandUser("~/.cache/")
 
 		c := make(chan string)
-		go childrenInDirectory(dirName, c)
+		go childrenInDirectory(dirName, false, c)
 
 		for {
 			_, ok := <-c
 			if !ok {
 				break
 			}
-
 		}
 	}
 }
