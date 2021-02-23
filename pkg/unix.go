@@ -32,34 +32,6 @@ func isRunning(exename string) bool {
 	panic("unsupported platform for physical_free()")
 }
 
-func isRunningDarwin(exename string) bool {
-	out, err := exec.Command("ps", "aux", "-c").Output()
-	if err != nil {
-		log.WithField("spot", "unix.isRunningDarwin()").Fatalln(err.Error())
-	}
-
-	strOut := string(out)
-	splitStrOut := strings.Split(strOut, "\n")
-	regExp := regexp.MustCompile(`\s+`)
-
-	processes := []string{}
-	for _, p := range splitStrOut {
-		if p != "" {
-			list := regExp.Split(p, 10)
-			if len(list) >= 11 {
-				processes = append(processes, list[10])
-			} else {
-				log.WithField("spot", "unix.isRunningDarwin()").Errorln("Unexpected output from ps")
-			}
-		}
-	}
-
-	// first line is result table header, no need
-	processes = processes[1:]
-
-	return valueInList(exename, &processes)
-}
-
 func isRunningLinux(exename string) bool {
 	matches, err := filepath.Glob("/proc/*/exe")
 	if err != nil {
@@ -111,6 +83,7 @@ func (lcp *LocaleCleanerPath) addChild(child *regexp.Regexp) *regexp.Regexp {
 	return child
 }
 
+// dds a filter consisting of a prefix and a postfix
 func (lcp *LocaleCleanerPath) addPathFilter(pre, post string) {
 	exp, err := regexp.Compile("^" + pre + LocalePattern + post + "$")
 	if err != nil {
@@ -120,6 +93,7 @@ func (lcp *LocaleCleanerPath) addPathFilter(pre, post string) {
 	lcp.addChild(exp)
 }
 
+// Returns direct subpaths for this object
 func (lcp *LocaleCleanerPath) getSubpaths(basepath string) []string {
 	res := []string{}
 	items, err := ioutil.ReadDir(basepath)
@@ -128,7 +102,8 @@ func (lcp *LocaleCleanerPath) getSubpaths(basepath string) []string {
 	}
 
 	for _, item := range items {
-		if stat, err := os.Stat(filepath.Join(basepath, item.Name())); stat.IsDir() && err == nil && lcp.pattern.Match([]byte(item.Name())) {
+		fullPath := filepath.Join(basepath, item.Name())
+		if stat, err := os.Stat(fullPath); err == nil && stat.IsDir() && lcp.pattern.MatchString(item.Name()) {
 			fullPath := filepath.Join(basepath, item.Name())
 			res = append(res, fullPath)
 		}
@@ -149,6 +124,7 @@ func wineToLinuxPath(wineprefix, windowsPathname string) string {
 	return filepath.Join(wineprefix, windowsPathname)
 }
 
+// Returns boolean whether application desktop entry file is broken
 func isBrokenXdgDesktopApplication(config *ini.File, desktopPathname string) bool {
 	if key, err := config.Section("Desktop Entry").GetKey("Exec"); err != nil {
 		log.WithField("spot", "unix.isBrokenXdgDesktopApplication()").Infoln("Missing required option 'Exec': " + desktopPathname)
@@ -162,11 +138,15 @@ func isBrokenXdgDesktopApplication(config *ini.File, desktopPathname string) boo
 		}
 
 		if "env" == exe {
+			// Wine v1.0 creates .desktop files like this
+			// Exec=env WINEPREFIX="/home/z/.wine" wine "C:\\Program
+			// Files\\foo\\foo.exe"
 			execs, err := shlex.Split(val, true)
 			if err != nil {
 				log.WithField("spot", "unix.isBrokenXdgDesktopApplication()").Errorln(err.Error())
 			}
-			winePrefix := ""
+			var winePrefix string
+			execs = execs[1:]
 			for {
 				if strings.Index(execs[0], "=") >= 0 {
 					splitExecs := strings.Split(execs[0], "=")
@@ -175,6 +155,7 @@ func isBrokenXdgDesktopApplication(config *ini.File, desktopPathname string) boo
 					if "WINEPREFIX" == name {
 						winePrefix = value
 					}
+					execs = execs[1:]
 				} else {
 					break
 				}
@@ -263,6 +244,38 @@ func isBrokenXdgDesktop(pathname string) bool {
 	}
 }
 
+// Yield a list of rotated (i.e., old) logs in /var/log/
+// func rotatedLogs() []string {
+// 	var res []string
+// 	globPaths := []string{
+// 		"/var/log/*.[0-9]",
+// 		"/var/log/*/*.[0-9]",
+// 		"/var/log/*.gz",
+// 		"/var/log/*/*gz",
+// 		"/var/log/*/*.old",
+// 		"/var/log/*.old",
+// 	}
+// 	for _, globPath := range globPaths {
+// 		matches, err := filepath.Glob(globPath)
+// 		if err != nil {
+// 			log.WithField("spot", "unix.rotatedLogs()").Fatalln(err.Error())
+// 			return nil
+// 		}
+// 		res = append(res, matches...)
+// 	}
+// 	regex := regexp.MustCompile("-[0-9]{8}$")
+// 	globPaths = []string{"/var/log/*-*", "/var/log/*/*-*"}
+// 	whitelistRe := regexp.MustCompile("^/var/log/(removed_)?(packages|scripts)")
+// 	for _, glob := range globPaths {
+// 		globex_ := globex(glob, regex)
+// 		if globex_ != nil {
+// 			for _, gl := range globex_ {
+
+// 			}
+// 		}
+// 	}
+// }
+
 func runCleanerCmd(cmd string, args []string, freedSpace string, errLines []string) int {
 
 	if freedSpace == "" {
@@ -310,18 +323,18 @@ func getAptSize() {
 
 }
 
-func getGlobsSize(paths ...string) {
-	totalSize := 0
-	for _, path := range paths {
-		matches, err := filepath.Glob(path)
-		if err != nil {
-			log.WithField("spot", "unix.getBlobsSize()").Fatalln(err.Error())
-		}
-		for _, match := range matches {
-			totalSize += 
-		}
-	}
-}
+// func getGlobsSize(paths ...string) {
+// 	totalSize := 0
+// 	for _, path := range paths {
+// 		matches, err := filepath.Glob(path)
+// 		if err != nil {
+// 			log.WithField("spot", "unix.getBlobsSize()").Fatalln(err.Error())
+// 		}
+// 		for _, match := range matches {
+// 			totalSize +=
+// 		}
+// 	}
+// }
 
 func aptAutoRemove() int {
 	args := []string{"--yes", "autoremove"}
@@ -336,5 +349,5 @@ func aptAutoClean() int {
 }
 
 // func aptClean() {
-// 	oldSize := 
+// 	oldSize :=
 // }

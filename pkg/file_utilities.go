@@ -340,8 +340,20 @@ func extendedPathUndo(path string) string {
 	return path
 }
 
-func globex(pathname string, regex *regexp.Regexp) {
+// Returns a list of files with pathname and filter by regex, nil if no match found
+func globex(pathname string, regex *regexp.Regexp) []string {
+	matches, err := filepath.Glob(pathname)
+	if err != nil {
+		log.WithField("spot", "file_utilities.globex()").Fatalln(err.Error())
+		return nil
+	}
+	for i, match := range matches {
+		if regex.FindAllString(match, -1) == nil {
+			matches = append(matches[:i], matches[i+1:]...)
+		}
+	}
 
+	return matches
 }
 
 type measureFormat string

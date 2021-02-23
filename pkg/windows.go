@@ -1,44 +1,52 @@
+// +build windows
+
 package pkg
 
-// "golang.org/x/sys/windows/registry"
+import (
+	"log"
+	"strconv"
+	"strings"
 
-// func parseWindowsBuild(build *string) []int {
-// 	if build == nil {
-// 		return getWindowsVersion()
-// 	}
+	"golang.org/x/sys/windows/registry"
+)
 
-// 	splitBuild := strings.Split(*build, ".")
-// 	maj, min := splitBuild[0], splitBuild[1]
+func parseWindowsBuild(build *string) []int {
+	if build == nil {
+		return getWindowsVersion()
+	}
 
-// 	intMaj, err := strconv.Atoi(maj)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
+	splitBuild := strings.Split(*build, ".")
+	maj, min := splitBuild[0], splitBuild[1]
 
-// 	intMin, err := strconv.Atoi(min)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
+	intMaj, err := strconv.Atoi(maj)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-// 	return []int{intMaj, intMin}
-// }
+	intMin, err := strconv.Atoi(min)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return []int{intMaj, intMin}
+}
 
 // getWindowsVersion returns windows major and minor version like 10.0
-// func getWindowsVersion() []int {
-// 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Windows NT\CurrentVersion`, registry.QUERY_VALUE)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
+func getWindowsVersion() []int {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Windows NT\CurrentVersion`, registry.QUERY_VALUE)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-// 	maj, _, err := k.GetIntegerValue("CurrentMajorVersionNumber")
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
+	maj, _, err := k.GetIntegerValue("CurrentMajorVersionNumber")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-// 	min, _, err := k.GetIntegerValue("CurrentMinorVersionNumber")
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
+	min, _, err := k.GetIntegerValue("CurrentMinorVersionNumber")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-// 	return []int{maj, min}
-// }
+	return []int{maj, min}
+}
